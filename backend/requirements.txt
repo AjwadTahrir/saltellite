@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+requests
+twilio
+python-dotenv
+groq
+scikit-learn
+numpy
+pandas
