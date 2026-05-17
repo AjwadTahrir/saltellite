@@ -2,7 +2,6 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from twilio.rest import Client
 from datetime import datetime, timedelta
 from groq import Groq
 import requests
@@ -328,34 +327,51 @@ class SMSRequest(BaseModel):
 @app.post("/send-sms")
 def send_sms(req: SMSRequest):
     try:
-        client = Client(
-            os.getenv("TWILIO_ACCOUNT_SID"),
-            os.getenv("TWILIO_AUTH_TOKEN"),
-        )
+        import requests as req_lib
 
-        recs = "\n".join([f"- {r}" for r in req.recommendations[:2]]) if req.recommendations else ""
+        api_key  = os.getenv("INFOBIP_API_KEY")
+        base_url = os.getenv("INFOBIP_BASE_URL")
+
+        if req.salinity_risk == "Severe":
+            auto_action = "Stop irrigation. Apply gypsum now."
+        elif req.salinity_risk == "Moderate":
+            auto_action = "Flush with fresh water. Clear drains."
+        elif req.salinity_risk == "Mild":
+            auto_action = "Increase irrigation. Check drainage."
+        else:
+            auto_action = "Field OK. Continue normal farming."
+
+        crop_health = "Healthy" if req.ndvi >= 0.6 else "Stressed" if req.ndvi >= 0.4 else "Critical"
+        short_name  = req.field_name.split("—")[0].strip()
 
         body = (
-            f"[SALTellite Alert] {req.urgency}\n"
-            f"Field: {req.field_name}\n"
-            f"Salinity: {req.ec} dS/m ({req.salinity_risk})\n"
-            f"NDVI: {req.ndvi}\n\n"
-            f"{req.summary}\n\n"
-            f"Actions:\n{recs}\n"
-            f"-- SALTellite Satellite System"
+            f"SALTellite [{req.urgency}]\n"
+            f"{short_name}\n"
+            f"Salt:{req.salinity_risk} {req.ec}dS/m\n"
+            f"Crop:{crop_health} {req.ndvi}\n"
+            f"{auto_action}"
         )
 
-        message = client.messages.create(
-            body=body,
-            from_=os.getenv("TWILIO_FROM"),
-            to=req.to,
+        response = req_lib.post(
+            f"https://{base_url}/sms/3/messages",
+            headers={
+                "Authorization": f"App {api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            json={
+                "messages": [{
+                    "destinations": [{ "to": req.to.replace("+", "") }],
+                    "sender": "447491163443",
+                    "content": { "text": body }
+                }]
+            }
         )
 
-        return {"success": True, "sid": message.sid, "status": message.status}
+        return {"success": True, "status": response.status_code, "response": response.json()}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # ── Inbound SMS webhook (farmer queries) ───────────────────────────────────
 FIELD_MAP = {
