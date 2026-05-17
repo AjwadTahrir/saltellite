@@ -5,7 +5,7 @@ import axios from "axios";
 import "leaflet/dist/leaflet.css";
 import "./App.css";
 
-const API = "http://localhost:8000";
+const API = "https://saltellite-api.onrender.com/";
 
 const FIELDS = [
   { id: 1, name: "Sekinchan — Paddy",        lat: 3.535357, lng: 101.120330, area: "5.2 ha" },
