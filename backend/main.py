@@ -359,12 +359,11 @@ def send_sms(req: SMSRequest):
 
 # ── Inbound SMS webhook (farmer queries) ───────────────────────────────────
 FIELD_MAP = {
-    "A": { "name": "Sekinchan — Paddy",      "lat": 3.6926, "lng": 101.0324, "area": "5.2 ha" },
-    "B": { "name": "Sabak Bernam — Paddy",   "lat": 3.7697, "lng": 100.9800, "area": "3.8 ha" },
-    "C": { "name": "Kuala Selangor — Rice",  "lat": 3.3452, "lng": 101.2573, "area": "4.5 ha" },
-    "D": { "name": "Tanjong Karang — Paddy", "lat": 3.4167, "lng": 101.1833, "area": "6.1 ha" },
+    "A": { "name": "Sekinchan — Paddy",       "lat": 3.535357, "lng": 101.120330, "area": "5.2 ha" },
+    "B": { "name": "Kampung Gajah — Paddy",   "lat": 4.051622, "lng": 100.887673, "area": "3.8 ha" },
+    "C": { "name": "Felda Besout — Palm Trees", "lat": 3.839389, "lng": 101.266863, "area": "8.3 ha" },
+    "D": { "name": "Felda Jengka — Palm Trees", "lat": 3.769802, "lng": 102.438469, "area": "7.6 ha" },
 }
-
 @app.post("/sms-webhook")
 async def sms_webhook(request: Request):
     """
