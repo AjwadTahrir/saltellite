@@ -8,6 +8,7 @@ import requests
 import pickle
 import pandas as pd
 import os
+import json
 
 load_dotenv()
 app = FastAPI()
@@ -40,7 +41,7 @@ def get_sentinel_token():
     return resp.json()["access_token"]
 
 
-# ── Fetch satellite index (generic) ───────────────────────────────────────
+# ── Fetch satellite index ──────────────────────────────────────────────────
 def fetch_index(token: str, bbox: list, evalscript: str, index_name: str):
     date_to   = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     date_from = (datetime.utcnow() - timedelta(days=90)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -93,7 +94,7 @@ def fetch_index(token: str, bbox: list, evalscript: str, index_name: str):
     return round(float(valid[-1]["outputs"][index_name]["bands"]["B0"]["stats"]["mean"]), 4)
 
 
-# ── Evalscripts for each index ─────────────────────────────────────────────
+# ── Evalscripts ────────────────────────────────────────────────────────────
 EVALSCRIPTS = {
     "ndvi": """
 //VERSION=3
@@ -129,7 +130,6 @@ function evaluatePixel(s) { let L=0.5; return { savi: [(s.B08-s.B04)/(s.B08+s.B0
 
 
 def fallback_indices(seed=0):
-    """Realistic fallback values if Sentinel Hub returns no data."""
     import random
     r = random.Random(seed)
     ndvi = round(r.uniform(0.25, 0.70), 4)
@@ -147,35 +147,27 @@ def fallback_indices(seed=0):
 # ── Main field analysis endpoint ───────────────────────────────────────────
 @app.get("/field")
 def get_field(lat: float, lng: float):
-    """
-    Fetches all satellite indices for a location, predicts salinity,
-    and returns full field analysis.
-    """
     try:
         token = get_sentinel_token()
         delta = 0.003
         bbox  = [lng - delta, lat - delta, lng + delta, lat + delta]
 
-        # Fetch all indices
         indices = {}
         for name, script in EVALSCRIPTS.items():
             val = fetch_index(token, bbox, script, name)
             indices[name] = val
 
-        # Check how many succeeded
         missing = [k for k, v in indices.items() if v is None]
         if len(missing) >= 4:
             fb = fallback_indices(seed=int(lat * 1000))
             indices = {k: fb[k] for k in EVALSCRIPTS}
             source = "simulated"
         else:
-            # Fill any missing with fallback
             fb = fallback_indices(seed=int(lat * 1000))
             for k in missing:
                 indices[k] = fb[k]
             source = "sentinel-2"
 
-        # Predict salinity
         features = pd.DataFrame([{
             "ndvi": indices["ndvi"],
             "ndsi": indices["ndsi"],
@@ -187,7 +179,6 @@ def get_field(lat: float, lng: float):
         ec = round(float(salinity_model.predict(features)[0]), 2)
         ec = max(0.1, ec)
 
-        # Salinity risk
         if ec < 2.0:
             salinity_risk  = "Safe"
             salinity_color = "green"
@@ -201,14 +192,8 @@ def get_field(lat: float, lng: float):
             salinity_risk  = "Severe"
             salinity_color = "red"
 
-        # NDVI crop health
         ndvi = indices["ndvi"]
-        if ndvi >= 0.6:
-            crop_status = "Healthy"
-        elif ndvi >= 0.4:
-            crop_status = "Stressed"
-        else:
-            crop_status = "Critical"
+        crop_status = "Healthy" if ndvi >= 0.6 else "Stressed" if ndvi >= 0.4 else "Critical"
 
         return {
             "indices": indices,
@@ -230,7 +215,7 @@ def get_field(lat: float, lng: float):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── Keep legacy /ndvi endpoint for backward compat ─────────────────────────
+# ── Legacy NDVI endpoint ───────────────────────────────────────────────────
 @app.get("/ndvi")
 def get_ndvi(lat: float, lng: float):
     data = get_field(lat, lng)
@@ -300,7 +285,6 @@ Respond ONLY as JSON with these exact keys:
             max_tokens=600,
         )
 
-        import json
         raw = response.choices[0].message.content.strip()
         if raw.startswith("```"):
             raw = raw.split("```")[1]
@@ -312,7 +296,28 @@ Respond ONLY as JSON with these exact keys:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── SMS ────────────────────────────────────────────────────────────────────
+# ── Infobip SMS helper ─────────────────────────────────────────────────────
+def send_infobip_sms(to: str, body: str):
+    api_key  = os.getenv("INFOBIP_API_KEY")
+    base_url = os.getenv("INFOBIP_BASE_URL")
+    return requests.post(
+        f"https://{base_url}/sms/3/messages",
+        headers={
+            "Authorization": f"App {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        json={
+            "messages": [{
+                "destinations": [{ "to": to.replace("+", "") }],
+                "sender": "447491163443",
+                "content": { "text": body }
+            }]
+        }
+    )
+
+
+# ── SMS endpoint ───────────────────────────────────────────────────────────
 class SMSRequest(BaseModel):
     to: str
     field_name: str
@@ -327,11 +332,6 @@ class SMSRequest(BaseModel):
 @app.post("/send-sms")
 def send_sms(req: SMSRequest):
     try:
-        import requests as req_lib
-
-        api_key  = os.getenv("INFOBIP_API_KEY")
-        base_url = os.getenv("INFOBIP_BASE_URL")
-
         if req.salinity_risk == "Severe":
             auto_action = "Stop irrigation. Apply gypsum now."
         elif req.salinity_risk == "Moderate":
@@ -352,97 +352,99 @@ def send_sms(req: SMSRequest):
             f"{auto_action}"
         )
 
-        response = req_lib.post(
-            f"https://{base_url}/sms/3/messages",
-            headers={
-                "Authorization": f"App {api_key}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            },
-            json={
-                "messages": [{
-                    "destinations": [{ "to": req.to.replace("+", "") }],
-                    "sender": "447491163443",
-                    "content": { "text": body }
-                }]
-            }
-        )
-
+        response = send_infobip_sms(req.to, body)
         return {"success": True, "status": response.status_code, "response": response.json()}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ── Inbound SMS webhook (farmer queries) ───────────────────────────────────
+
+# ── Dynamic field storage ──────────────────────────────────────────────────
 FIELD_MAP = {
-    "A": { "name": "Sekinchan — Paddy",       "lat": 3.535357, "lng": 101.120330, "area": "5.2 ha" },
-    "B": { "name": "Kampung Gajah — Paddy",   "lat": 4.051622, "lng": 100.887673, "area": "3.8 ha" },
-    "C": { "name": "Felda Besout — Palm Trees", "lat": 3.839389, "lng": 101.266863, "area": "8.3 ha" },
-    "D": { "name": "Felda Jengka — Palm Trees", "lat": 3.769802, "lng": 102.438469, "area": "7.6 ha" },
+    "A": { "name": "Sekinchan — Paddy",          "lat": 3.535357, "lng": 101.120330, "area": "5.2 ha" },
+    "B": { "name": "Kampung Gajah — Paddy",      "lat": 4.051622, "lng": 100.887673, "area": "3.8 ha" },
+    "C": { "name": "Felda Besout — Palm Trees",  "lat": 3.839389, "lng": 101.266863, "area": "8.3 ha" },
+    "D": { "name": "Felda Jengka — Palm Trees",  "lat": 3.769802, "lng": 102.438469, "area": "7.6 ha" },
 }
+
+custom_fields = {}  # dynamically registered from dashboard
+
+
+# ── Register custom field ──────────────────────────────────────────────────
+class CustomFieldRequest(BaseModel):
+    name: str
+    lat: float
+    lng: float
+    area: str
+    radius: float
+
+
+@app.post("/register-field")
+def register_field(req: CustomFieldRequest):
+    key = str(len(custom_fields) + len(FIELD_MAP) + 1)
+    custom_fields[key] = {
+        "name": req.name,
+        "lat":  req.lat,
+        "lng":  req.lng,
+        "area": req.area,
+    }
+    return {"key": key, "message": f"Field registered as STATUS {key}"}
+
+
+# ── Inbound SMS webhook ────────────────────────────────────────────────────
 @app.post("/sms-webhook")
 async def sms_webhook(request: Request):
-    """
-    Twilio webhook — farmer sends SMS like 'STATUS A' or 'FIELD B'
-    and gets back a salinity + crop update.
-    """
     try:
         form   = await request.form()
         body   = form.get("Body", "").strip().upper()
         sender = form.get("From", "")
 
-        twilio_client = Client(
-            os.getenv("TWILIO_ACCOUNT_SID"),
-            os.getenv("TWILIO_AUTH_TOKEN"),
-        )
+        # Merge default + custom fields
+        all_fields = {**FIELD_MAP, **custom_fields}
 
         # Parse field key
         field_key = None
-        for key in FIELD_MAP:
-            if key in body:
+        for key in all_fields:
+            if key.upper() in body or all_fields[key]["name"].upper().split("—")[0].strip() in body:
                 field_key = key
                 break
 
         if not field_key:
+            keys_list = ", ".join([f"STATUS {k}" for k in all_fields.keys()])
             reply = (
-                "SALTellite — Crop & Salinity Monitor\n\n"
-                "Send: STATUS A, STATUS B, STATUS C, or STATUS D\n"
-                "to get the latest update for your field."
+                f"SALTellite\n"
+                f"Available fields:\n"
+                f"{keys_list}\n"
+                f"Send STATUS [key] for update."
             )
         else:
-            field = FIELD_MAP[field_key]
+            field = all_fields[field_key]
             data  = get_field(field["lat"], field["lng"])
 
             ec   = data["salinity"]["ec"]
             risk = data["salinity"]["risk"]
             ndvi = data["crop"]["ndvi"]
             crop = data["crop"]["status"]
-            date = data["date"]
 
             if risk == "Severe":
-                action = "URGENT: Stop irrigation, apply gypsum treatment immediately."
+                action = "Stop irrigation. Apply gypsum now."
             elif risk == "Moderate":
-                action = "Flush fields with fresh water. Monitor daily."
+                action = "Flush with fresh water. Clear drains."
             elif risk == "Mild":
-                action = "Increase freshwater irrigation. Check drainage."
+                action = "Increase irrigation. Check drainage."
             else:
-                action = "Field is healthy. Continue normal farming."
+                action = "Field OK. Continue farming."
 
+            short = field["name"].split("—")[0].strip()
             reply = (
-                f"SALTellite Update — {field['name']}\n"
-                f"Date: {date}\n\n"
-                f"Salinity: {ec} dS/m — {risk}\n"
-                f"Crop Health: {crop} (NDVI {ndvi})\n\n"
-                f"{action}\n\n"
-                f"Reply STATUS A/B/C/D for other fields."
+                f"SALTellite Update\n"
+                f"{short}\n"
+                f"Salt:{risk} {ec}dS/m\n"
+                f"Crop:{crop} NDVI {ndvi}\n"
+                f"{action}"
             )
 
-        twilio_client.messages.create(
-            body=reply,
-            from_=os.getenv("TWILIO_FROM"),
-            to=sender,
-        )
-
+        send_infobip_sms(sender, reply)
         return {"status": "ok"}
 
     except Exception as e:

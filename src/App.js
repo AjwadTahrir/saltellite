@@ -1,17 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { MapContainer, TileLayer, Circle, Popup, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Circle, Popup, useMap, useMapEvents } from "react-leaflet";
 import { XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
 import axios from "axios";
 import "leaflet/dist/leaflet.css";
 import "./App.css";
 
-const API = "https://saltellite-api.onrender.com/";
+const API = "http://localhost:8000";
 
-const FIELDS = [
-  { id: 1, name: "Sekinchan — Paddy",        lat: 3.535357, lng: 101.120330, area: "5.2 ha" },
-  { id: 2, name: "Kampung Gajah — Paddy",    lat: 4.051622, lng: 100.887673, area: "3.8 ha" },
-  { id: 3, name: "Felda Besout — Palm Trees",  lat: 3.839389, lng: 101.266863, area: "8.3 ha" },
-  { id: 4, name: "Felda Jengka — Palm Trees",  lat: 3.769802, lng: 102.438469, area: "7.6 ha" },
+const DEFAULT_FIELDS = [
+  { id: 1, name: "Sekinchan — Paddy",         lat: 3.535357, lng: 101.120330, area: "5.2 ha", radius: 407,  custom: false },
+  { id: 2, name: "Kampung Gajah — Paddy",     lat: 4.051622, lng: 100.887673, area: "3.8 ha", radius: 348,  custom: false },
+  { id: 3, name: "Felda Besout — Palm Trees", lat: 3.839389, lng: 101.266863, area: "8.3 ha", radius: 514,  custom: false },
+  { id: 4, name: "Felda Jengka — Palm Trees", lat: 3.769802, lng: 102.438469, area: "7.6 ha", radius: 492,  custom: false },
 ];
 
 function salinityColor(risk) {
@@ -27,13 +27,6 @@ function ndviColor(v) {
   if (v >= 0.6) return "#5a826a";
   if (v >= 0.4) return "#b8832a";
   return "#c55a3e";
-}
-
-function ndviLabel(v) {
-  if (v === null || v === undefined) return "loading";
-  if (v >= 0.6) return "good";
-  if (v >= 0.4) return "warning";
-  return "critical";
 }
 
 function generateNdviHistory(baseNdvi) {
@@ -64,6 +57,47 @@ function MapFlyTo({ field }) {
   return null;
 }
 
+function PressAndHoldHandler({ onFieldAdd }) {
+  const holdRef   = useRef(null);
+  const radiusRef = useRef(100);
+  const latLngRef = useRef(null);
+  const [preview, setPreview] = useState(null);
+
+  useMapEvents({
+    mousedown(e) {
+      latLngRef.current = e.latlng;
+      radiusRef.current = 100;
+      setPreview({ lat: e.latlng.lat, lng: e.latlng.lng, radius: 100 });
+      holdRef.current = setInterval(() => {
+        radiusRef.current = Math.min(radiusRef.current + 30, 2000);
+        setPreview({ lat: latLngRef.current.lat, lng: latLngRef.current.lng, radius: radiusRef.current });
+      }, 100);
+    },
+    mouseup() {
+      if (holdRef.current) { clearInterval(holdRef.current); holdRef.current = null; }
+      if (latLngRef.current && radiusRef.current > 150) {
+        onFieldAdd(latLngRef.current.lat, latLngRef.current.lng, radiusRef.current);
+      }
+      setPreview(null);
+      latLngRef.current = null;
+    },
+    mousemove() {
+      if (holdRef.current && radiusRef.current < 150) {
+        clearInterval(holdRef.current);
+        holdRef.current = null;
+        setPreview(null);
+      }
+    },
+    contextmenu(e) { e.originalEvent.preventDefault(); }
+  });
+
+  if (!preview) return null;
+  return (
+    <Circle center={[preview.lat, preview.lng]} radius={preview.radius}
+      pathOptions={{ color: "#9BB5A3", fillColor: "#9BB5A3", fillOpacity: 0.3, weight: 2, dashArray: "6 4" }} />
+  );
+}
+
 function RiskGauge({ score }) {
   const color = score >= 70 ? "#5a826a" : score >= 40 ? "#b8832a" : "#c55a3e";
   const angle = (score / 100) * 180 - 90;
@@ -86,27 +120,29 @@ function RiskGauge({ score }) {
 }
 
 export default function App() {
-  const [time, setTime]               = useState(new Date());
-  const [activeField, setActive]      = useState(FIELDS[0]);
-  const [mapMode, setMapMode]         = useState("SALINITY");
-  const [fieldData, setFieldData]     = useState({});
-  const [loading, setLoading]         = useState(true);
-  const [ndviHistory, setNdviHistory] = useState([]);
+  const [time, setTime]                     = useState(new Date());
+  const [fields, setFields]                 = useState(DEFAULT_FIELDS);
+  const [activeField, setActive]            = useState(DEFAULT_FIELDS[0]);
+  const [mapMode, setMapMode]               = useState("SALINITY");
+  const [fieldData, setFieldData]           = useState({});
+  const [loading, setLoading]               = useState(true);
+  const [ndviHistory, setNdviHistory]       = useState([]);
   const [salinityHistory, setSalinityHistory] = useState([]);
-  const [analysis, setAnalysis]       = useState(null);
-  const [analyzing, setAnalyzing]     = useState(false);
-  const [alerts, setAlerts]           = useState([{ type: "info", msg: "Fetching live satellite data…" }]);
-  const [smsLog, setSmsLog]           = useState([]);
-  const [phone, setPhone]             = useState("+60");
-  const [sending, setSending]         = useState(false);
-  const [activeTab, setActiveTab]     = useState("salinity");
+  const [analysis, setAnalysis]             = useState(null);
+  const [analyzing, setAnalyzing]           = useState(false);
+  const [alerts, setAlerts]                 = useState([{ type: "info", msg: "Fetching live satellite data…" }]);
+  const [smsLog, setSmsLog]                 = useState([]);
+  const [phone, setPhone]                   = useState("+60");
+  const [sending, setSending]               = useState(false);
+  const [activeTab, setActiveTab]           = useState("salinity");
+  const [addingField, setAddingField]       = useState(false);
 
   useEffect(() => {
     const t = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  // Fetch all field data on mount
+  // Fetch all default fields on mount
   useEffect(() => {
     async function fetchAll() {
       setLoading(true);
@@ -114,17 +150,18 @@ export default function App() {
       const newAlerts = [];
 
       await Promise.all(
-        FIELDS.map(async (field) => {
+        DEFAULT_FIELDS.map(async (field) => {
           try {
-            const res = await axios.get(`${API}/field`, { params: { lat: field.lat, lng: field.lng } });
+            const res = await axios.get(`${API}/field`, {
+              params: { lat: field.lat, lng: field.lng, radius: field.radius ?? 300 }
+            });
             results[field.id] = res.data;
-
             const ec   = res.data.salinity.ec;
             const risk = res.data.salinity.risk;
             if (risk === "Severe" || risk === "Moderate")
               newAlerts.push({ type: "critical", msg: `${field.name}: Salinity ${ec} dS/m — ${risk}` });
             else if (risk === "Mild")
-              newAlerts.push({ type: "warning", msg: `${field.name}: Mild salinity detected (${ec} dS/m)` });
+              newAlerts.push({ type: "warning", msg: `${field.name}: Mild salinity (${ec} dS/m)` });
           } catch {
             results[field.id] = null;
           }
@@ -133,22 +170,65 @@ export default function App() {
 
       setFieldData(results);
       setLoading(false);
-      newAlerts.push({ type: "info", msg: "Sentinel-2 revisit cycle: every 5 days over Selangor" });
+      newAlerts.push({ type: "info", msg: "Sentinel-2 revisit cycle: every 5 days" });
       setAlerts(newAlerts.length > 1 ? newAlerts : [
         { type: "info", msg: "All fields show safe salinity levels" },
-        { type: "info", msg: "Sentinel-2 revisit cycle: every 5 days over Selangor" },
+        { type: "info", msg: "Sentinel-2 revisit cycle: every 5 days" },
       ]);
     }
     fetchAll();
   }, []);
 
-  // Update history when active field changes
   useEffect(() => {
     const data = fieldData[activeField.id];
     setNdviHistory(generateNdviHistory(data?.crop?.ndvi ?? 0.5));
     setSalinityHistory(generateSalinityHistory(data?.salinity?.ec ?? 2.0));
     setAnalysis(null);
   }, [activeField, fieldData]);
+
+  // Press and hold — add custom field
+  const handleFieldAdd = useCallback(async (lat, lng, radius) => {
+    const newId  = Date.now();
+    const areaHa = ((Math.PI * radius * radius) / 10000).toFixed(1);
+    const newField = {
+      id: newId,
+      name: `Custom Field ${fields.filter(f => f.custom).length + 1}`,
+      lat, lng,
+      area: `${areaHa} ha`,
+      radius: Math.round(radius),
+      custom: true,
+    };
+
+    setFields(prev => [...prev, newField]);
+    setActive(newField);
+    setActiveTab("salinity");
+    setAlerts(prev => [{ type: "info", msg: `Analyzing field at ${lat.toFixed(4)}, ${lng.toFixed(4)}…` }, ...prev.slice(0, 3)]);
+
+    try {
+      // Pass radius so backend uses correct bounding box
+      const res = await axios.get(`${API}/field`, {
+        params: { lat, lng, radius: Math.round(radius) }
+      });
+      setFieldData(prev => ({ ...prev, [newId]: res.data }));
+      const risk = res.data.salinity.risk;
+      const ec   = res.data.salinity.ec;
+      setAlerts(prev => [
+        { type: risk === "Safe" ? "info" : risk === "Mild" ? "warning" : "critical",
+          msg: `Custom Field: Salinity ${ec} dS/m — ${risk}` },
+        ...prev.slice(0, 3)
+      ]);
+
+      // Register with backend for SMS
+      await axios.post(`${API}/register-field`, {
+        name:   newField.name,
+        lat, lng,
+        area:   `${areaHa} ha`,
+        radius: Math.round(radius),
+      });
+    } catch {
+      setFieldData(prev => ({ ...prev, [newId]: null }));
+    }
+  }, [fields]);
 
   const runAnalysis = useCallback(async () => {
     const data = fieldData[activeField.id];
@@ -202,17 +282,21 @@ export default function App() {
     setSending(false);
   }, [phone, sending, activeField, fieldData, analysis, time]);
 
+  const removeCustomField = useCallback((id) => {
+    setFields(prev => prev.filter(f => f.id !== id));
+    setFieldData(prev => { const n = { ...prev }; delete n[id]; return n; });
+    setActive(DEFAULT_FIELDS[0]);
+  }, []);
+
   const activeData     = fieldData[activeField.id];
   const activeEc       = activeData?.salinity?.ec ?? null;
   const activeRisk     = activeData?.salinity?.risk ?? null;
   const activeNdvi     = activeData?.crop?.ndvi ?? null;
   const activeIndices  = activeData?.indices ?? {};
-
-  const allEc      = Object.values(fieldData).filter(Boolean).map(d => d.salinity.ec);
-  const avgEc      = allEc.length ? (allEc.reduce((a, b) => a + b, 0) / allEc.length).toFixed(2) : "…";
+  const allEc          = Object.values(fieldData).filter(Boolean).map(d => d.salinity.ec);
+  const avgEc          = allEc.length ? (allEc.reduce((a, b) => a + b, 0) / allEc.length).toFixed(2) : "…";
   const criticalFields = Object.values(fieldData).filter(Boolean).filter(d => d.salinity.risk === "Severe" || d.salinity.risk === "Moderate").length;
-
-  const urgencyColor = analysis?.urgency === "CRITICAL" ? "var(--red)" : analysis?.urgency === "WARNING" ? "var(--yellow)" : "var(--sage-dark)";
+  const urgencyColor   = analysis?.urgency === "CRITICAL" ? "var(--red)" : analysis?.urgency === "WARNING" ? "var(--yellow)" : "var(--sage-dark)";
 
   return (
     <div className="app">
@@ -225,6 +309,16 @@ export default function App() {
           </div>
         </div>
         <div className="header-right">
+          <button onClick={() => setAddingField(f => !f)} style={{
+            fontFamily: "var(--font-body)", fontSize: "0.78rem", fontWeight: 600,
+            padding: "0.45rem 1rem", borderRadius: "999px", cursor: "pointer",
+            background: addingField ? "var(--sage)" : "transparent",
+            border: "1.5px solid var(--sage)",
+            color: addingField ? "#fff" : "var(--sage-dark)",
+            transition: "all 0.2s",
+          }}>
+            {addingField ? "Hold map to set field size" : "+ Add Field"}
+          </button>
           <div className="status-badge">
             <div className="pulse" />
             {loading ? "Fetching satellite data…" : "Live — Sentinel-2 + ML Model"}
@@ -234,13 +328,12 @@ export default function App() {
       </header>
 
       <div className="main">
-        {/* Stats */}
         <div className="stats-bar">
           {[
-            { label: "Fields Monitored", value: "4",                          sub: "Selangor, MY",                    cls: "green",  w: "100%",             bg: "var(--sage)" },
-            { label: "Avg Salinity",     value: loading ? "…" : `${avgEc}`,   sub: loading ? "Loading…" : "dS/m — ML Prediction", cls: "yellow", w: `${Math.min(avgEc * 10, 100)}%`, bg: "var(--sandy-dark)" },
-            { label: "At-Risk Fields",   value: loading ? "…" : criticalFields, sub: "Moderate or Severe",            cls: criticalFields > 0 ? "red" : "green", w: `${criticalFields * 25}%`, bg: "var(--red)" },
-            { label: "Active Alerts",    value: alerts.filter(a => a.type !== "info").length, sub: "Require attention", cls: "red",  w: "60%",              bg: "var(--red)" },
+            { label: "Fields Monitored", value: fields.length,                  sub: `${fields.filter(f=>f.custom).length} custom`, cls: "green",  w: "100%",                             bg: "var(--sage)" },
+            { label: "Avg Salinity",     value: loading ? "…" : `${avgEc}`,     sub: "dS/m — ML Prediction",                        cls: "yellow", w: `${Math.min(avgEc * 10, 100)}%`,   bg: "var(--sandy-dark)" },
+            { label: "At-Risk Fields",   value: loading ? "…" : criticalFields, sub: "Moderate or Severe",                          cls: criticalFields > 0 ? "red" : "green", w: `${criticalFields * 25}%`, bg: "var(--red)" },
+            { label: "Active Alerts",    value: alerts.filter(a => a.type !== "info").length, sub: "Require attention",              cls: "red",    w: "60%",                              bg: "var(--red)" },
             { label: "AI Status",        value: analysis ? analysis.urgency : "—", sub: analysis ? analysis.health_label : "Run analysis", cls: analysis ? (analysis.urgency === "CRITICAL" ? "red" : analysis.urgency === "WARNING" ? "yellow" : "green") : "", w: analysis ? `${analysis.risk_score}%` : "0%", bg: urgencyColor },
           ].map((s, i) => (
             <div key={i} className="stat">
@@ -252,7 +345,6 @@ export default function App() {
           ))}
         </div>
 
-        {/* Map */}
         <div className="map-section">
           <div className="map-header">
             <div className="map-title">
@@ -265,26 +357,31 @@ export default function App() {
             </div>
           </div>
 
+          {addingField && (
+            <div style={{ background: "var(--sage-dim)", border: "1px solid var(--sage)", padding: "0.6rem 1.25rem", fontSize: "0.78rem", color: "var(--sage-dark)", fontWeight: 600 }}>
+              Hold down on any location to place a field. The longer you hold, the larger the radius.
+            </div>
+          )}
+
           <div className="map-container">
-            <MapContainer center={[3.139, 101.6869]} zoom={13} style={{ height: "100%", width: "100%" }} zoomControl={false} scrollWheelZoom={true}>
+            <MapContainer center={[3.8, 101.5]} zoom={8} style={{ height: "100%", width: "100%" }} zoomControl={false} scrollWheelZoom={true}>
               <MapFlyTo field={activeField} />
               <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="© OpenStreetMap" />
-              {FIELDS.map(f => {
+              {addingField && <PressAndHoldHandler onFieldAdd={handleFieldAdd} />}
+              {fields.map(f => {
                 const fd    = fieldData[f.id];
-                const color = mapMode === "SALINITY"
-                  ? salinityColor(fd?.salinity?.risk)
-                  : ndviColor(fd?.crop?.ndvi ?? null);
+                const color = mapMode === "SALINITY" ? salinityColor(fd?.salinity?.risk) : ndviColor(fd?.crop?.ndvi ?? null);
                 return (
-                  <Circle key={f.id} center={[f.lat, f.lng]} radius={300}
+                  <Circle key={f.id} center={[f.lat, f.lng]} radius={f.radius}
                     pathOptions={{ color, fillColor: color, fillOpacity: activeField.id === f.id ? 0.65 : 0.4, weight: activeField.id === f.id ? 3 : 1.5 }}
-                    eventHandlers={{ click: () => setActive(f) }}>
+                    eventHandlers={{ click: () => { setActive(f); setAddingField(false); } }}>
                     <Popup>
                       <div style={{ fontFamily: "DM Mono, monospace", fontSize: "13px", padding: "4px", lineHeight: 1.7 }}>
                         <strong>{f.name}</strong><br />
                         Salinity: {fd?.salinity?.ec ?? "…"} dS/m ({fd?.salinity?.risk ?? "…"})<br />
                         NDVI: {fd?.crop?.ndvi ?? "…"} — {fd?.crop?.status ?? "…"}<br />
-                        Date: {fd?.date ?? "…"}<br />
-                        Area: {f.area}
+                        Area: {f.area} | Radius: {f.radius}m<br />
+                        {f.custom && <span style={{ color: "#c55a3e", cursor: "pointer" }} onClick={() => removeCustomField(f.id)}>Remove field</span>}
                       </div>
                     </Popup>
                   </Circle>
@@ -299,26 +396,25 @@ export default function App() {
             <div className="ndvi-labels">
               {mapMode === "SALINITY"
                 ? <><span>Safe</span><span>Mild</span><span>Severe</span></>
-                : <><span>Bare</span><span>Sparse</span><span>Healthy</span></>
-              }
+                : <><span>Bare</span><span>Sparse</span><span>Healthy</span></>}
             </div>
           </div>
         </div>
 
-        {/* Sidebar */}
         <div className="sidebar">
-
-          {/* Fields */}
           <div className="sidebar-section">
             <div className="section-title">Fields</div>
             <div className="field-list">
-              {FIELDS.map(f => {
+              {fields.map(f => {
                 const fd   = fieldData[f.id];
                 const risk = fd?.salinity?.risk ?? null;
                 const ec   = fd?.salinity?.ec ?? null;
                 return (
                   <div key={f.id} className={`field-item ${activeField.id === f.id ? "active" : ""}`} onClick={() => setActive(f)}>
-                    <div className="field-name">{f.name}</div>
+                    <div>
+                      <div className="field-name">{f.name}</div>
+                      {f.custom && <div style={{ fontSize: "0.62rem", color: "var(--text-dim)" }}>{f.area} · {f.radius}m radius</div>}
+                    </div>
                     <div className={`field-ndvi ndvi-${risk === "Safe" ? "good" : risk === "Mild" ? "warn" : risk ? "bad" : "good"}`}>
                       {ec !== null ? `${ec} dS/m — ${risk}` : "Loading…"}
                     </div>
@@ -328,7 +424,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Tabs */}
           <div className="tab-bar">
             {[
               { id: "salinity", label: "Salinity" },
@@ -342,12 +437,10 @@ export default function App() {
             ))}
           </div>
 
-          {/* Salinity Tab */}
           {activeTab === "salinity" && (
             <div className="sidebar-section">
               {activeData ? (
                 <>
-                  {/* EC reading */}
                   <div style={{ background: "var(--surface)", border: `2px solid ${salinityColor(activeRisk)}`, borderRadius: "var(--radius)", padding: "1rem", marginBottom: "0.75rem", textAlign: "center" }}>
                     <div style={{ fontSize: "0.68rem", color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700, marginBottom: "0.4rem" }}>Predicted Soil Salinity</div>
                     <div style={{ fontFamily: "var(--font-display)", fontSize: "2.5rem", color: salinityColor(activeRisk), lineHeight: 1 }}>{activeEc}</div>
@@ -356,15 +449,13 @@ export default function App() {
                       {activeRisk}
                     </div>
                   </div>
-
-                  {/* Satellite indices */}
                   <div className="section-title" style={{ marginBottom: "0.6rem" }}>Satellite Indices</div>
                   <div className="sensor-grid">
                     {[
-                      { name: "NDSI", val: activeIndices.ndsi, desc: "Salinity Index",   good: v => v < 0,    tip: "Higher = more saline" },
-                      { name: "NDWI", val: activeIndices.ndwi, desc: "Water Index",      good: v => v < 0,    tip: "Higher = waterlogged" },
-                      { name: "BSI",  val: activeIndices.bsi,  desc: "Bare Soil Index",  good: v => v < 0,    tip: "Higher = less vegetation" },
-                      { name: "EVI",  val: activeIndices.evi,  desc: "Enhanced Veg.",    good: v => v > 0.4,  tip: "Higher = healthier crops" },
+                      { name: "NDSI", val: activeIndices.ndsi, desc: "Salinity Index",  good: v => v < 0,   tip: "Higher = more saline" },
+                      { name: "NDWI", val: activeIndices.ndwi, desc: "Water Index",     good: v => v < 0,   tip: "Higher = waterlogged" },
+                      { name: "BSI",  val: activeIndices.bsi,  desc: "Bare Soil Index", good: v => v < 0,   tip: "Higher = less vegetation" },
+                      { name: "EVI",  val: activeIndices.evi,  desc: "Enhanced Veg.",   good: v => v > 0.4, tip: "Higher = healthier crops" },
                     ].map(s => {
                       const status = s.val === undefined ? "good" : s.good(s.val) ? "good" : "warning";
                       return (
@@ -379,12 +470,13 @@ export default function App() {
                   </div>
                 </>
               ) : (
-                <div style={{ color: "var(--text-dim)", fontSize: "0.85rem", padding: "1rem 0" }}>Loading satellite data…</div>
+                <div style={{ color: "var(--text-dim)", fontSize: "0.85rem", padding: "1rem 0" }}>
+                  {fieldData[activeField.id] === null ? "No satellite data for this location." : "Loading satellite data…"}
+                </div>
               )}
             </div>
           )}
 
-          {/* Crop Health Tab */}
           {activeTab === "crop" && (
             <div className="sidebar-section">
               {activeData ? (
@@ -397,7 +489,6 @@ export default function App() {
                       {activeData.crop.status}
                     </div>
                   </div>
-
                   <div className="section-title" style={{ marginBottom: "0.6rem" }}>Additional Indices</div>
                   <div className="sensor-grid">
                     {[
@@ -423,7 +514,6 @@ export default function App() {
             </div>
           )}
 
-          {/* AI Tab */}
           {activeTab === "ai" && (
             <div className="sidebar-section">
               <div className="ai-panel">
@@ -479,7 +569,6 @@ export default function App() {
             </div>
           )}
 
-          {/* History Tab */}
           {activeTab === "history" && (
             <div className="sidebar-section">
               <div className="ai-label">6-Month Salinity Trend (EC dS/m)</div>
@@ -497,7 +586,6 @@ export default function App() {
                   <Area type="monotone" dataKey="ec" stroke="#c07030" strokeWidth={2} fill="url(#ecGrad)" dot={{ fill: "#c07030", r: 3 }} />
                 </AreaChart>
               </ResponsiveContainer>
-
               <div className="ai-label" style={{ marginTop: "1rem" }}>6-Month NDVI Trend</div>
               <ResponsiveContainer width="100%" height={85}>
                 <AreaChart data={ndviHistory}>
@@ -516,7 +604,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Alerts */}
           <div className="sidebar-section">
             <div className="section-title">Alerts</div>
             <div className="alert-list">
@@ -528,7 +615,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* SMS */}
           <div className="sidebar-section">
             <div className="section-title">SMS Alert</div>
             <div className="sms-panel">
@@ -562,7 +648,6 @@ export default function App() {
               )}
             </div>
           </div>
-
         </div>
       </div>
     </div>
