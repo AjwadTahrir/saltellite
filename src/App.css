@@ -1,27 +1,37 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
 
 :root {
-  --sage: #9BB5A3;
-  --sage-light: #c8ddd2;
-  --sage-dark: #5a826a;
-  --sage-dim: #9BB5A318;
-  --sandy: #E2C9A7;
-  --sandy-dark: #b8732a;
-  --bg: #f5f2ed;
+  /* ---- COASTAL TECH PALETTE (remapped from the old earthy tones) ---- */
+  /* primary accent = teal (matches the landing) */
+  --sage: #0d9488;          /* teal-600  (primary accent / buttons / borders) */
+  --sage-light: #99f6e4;    /* teal-200 */
+  --sage-dark: #0f766e;     /* teal-700  (accent text / good values) */
+  --sage-dim: #0d948814;    /* teal @ ~8% */
+  /* secondary = amber (warnings / EVI) */
+  --sandy: #fcd34d;         /* amber-300 */
+  --sandy-dark: #d97706;    /* amber-600 */
+  /* navy/slate — ties the dashboard to the landing logo + CTA */
+  --navy: #1e293b;          /* slate-800 */
+  --navy-deep: #0f172a;     /* slate-900 */
+  /* surfaces */
+  --bg: #f8fafc;            /* slate-50 */
   --surface: #ffffff;
-  --surface2: #f0ece5;
-  --border: #e2dbd0;
-  --text: #1e1c19;
-  --text-dim: #8a8278;
-  --red: #c55a3e;
-  --yellow: #b8832a;
-  --blue: #4a7d99;
-  --font-display: 'Playfair Display', serif;
-  --font-body: 'DM Sans', sans-serif;
+  --surface2: #f1f5f9;      /* slate-100 */
+  --border: #e2e8f0;        /* slate-200 */
+  /* text */
+  --text: #1e293b;          /* slate-800 (dark navy) */
+  --text-dim: #64748b;      /* slate-500 */
+  /* status */
+  --red: #dc2626;
+  --yellow: #d97706;
+  --blue: #0891b2;          /* cyan-600 */
+  /* fonts — one clean sans-serif everywhere; mono only for technical readouts */
+  --font-display: 'Outfit', system-ui, sans-serif;
+  --font-body: 'Outfit', system-ui, sans-serif;
   --font-mono: 'DM Mono', monospace;
   --radius: 14px;
-  --shadow: 0 1px 8px rgba(0,0,0,0.07);
-  --shadow-md: 0 4px 20px rgba(0,0,0,0.1);
+  --shadow: 0 1px 8px rgba(15,23,42,0.06);
+  --shadow-md: 0 4px 20px rgba(15,23,42,0.1);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -74,6 +84,7 @@ body {
 
 .logo-text {
   font-family: var(--font-display);
+  font-weight: 800;
   font-size: 1.6rem;
   color: var(--text);
   letter-spacing: -0.01em;
@@ -94,14 +105,15 @@ body {
 }
 
 .status-badge {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  height: 38px;                 /* match the Add Field button */
   font-size: 0.78rem;
-  color: var(--sage-dark);
-  background: var(--sage-dim);
-  border: 1.5px solid var(--sage);
-  padding: 0.45rem 1rem;
+  color: var(--text);
+  background: var(--surface);   /* ghost / outlined */
+  border: 1.5px solid var(--border);
+  padding: 0 1rem;
   border-radius: 999px;
   font-weight: 600;
 }
@@ -109,7 +121,7 @@ body {
 .pulse {
   width: 8px;
   height: 8px;
-  background: var(--sage-dark);
+  background: var(--sage);
   border-radius: 50%;
   animation: pulse 1.8s infinite;
 }
@@ -162,6 +174,7 @@ body {
 
 .stat-value {
   font-family: var(--font-display);
+  font-weight: 700;
   font-size: 1.85rem;
   line-height: 1;
   color: var(--text);
@@ -237,7 +250,7 @@ body {
 .map-container { flex: 1; }
 
 .leaflet-container { height: 100%; width: 100%; }
-.leaflet-tile-pane { filter: saturate(0.75) brightness(1.04); }
+.leaflet-tile-pane { filter: saturate(0.9) brightness(1.02); }
 
 /* NDVI Legend */
 .ndvi-legend {
@@ -264,7 +277,7 @@ body {
 .ndvi-bar {
   width: 130px;
   height: 8px;
-  background: linear-gradient(to right, #c55a3e, #b8832a, #9BB5A3, #5a826a);
+  background: linear-gradient(to right, #dc2626, #d97706, #5eead4, #0d9488);
   border-radius: 4px;
   margin-bottom: 0.35rem;
 }
@@ -282,11 +295,16 @@ body {
   flex-direction: column;
   overflow-y: auto;
   background: var(--bg);
+  padding: 0.85rem;
 }
 
 .sidebar-section {
-  border-bottom: 1px solid var(--border);
-  padding: 1.1rem 1.4rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 0.85rem;
 }
 
 .section-title {
@@ -337,8 +355,11 @@ body {
 .tab-bar {
   display: flex;
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding: 0 1.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0 0.75rem;
+  margin-bottom: 0.85rem;
 }
 
 .tab-btn {
@@ -354,7 +375,8 @@ body {
   transition: all 0.18s;
 }
 
-.tab-btn.active { color: var(--sage-dark); border-bottom-color: var(--sage); }
+/* active tab uses the dark navy accent (mirrors the landing) */
+.tab-btn.active { color: var(--navy); border-bottom-color: var(--navy); }
 .tab-btn:hover { color: var(--text); }
 
 /* SENSOR CARDS */
@@ -388,6 +410,7 @@ body {
 
 .sensor-value {
   font-family: var(--font-display);
+  font-weight: 700;
   font-size: 1.6rem;
   line-height: 1;
 }
@@ -400,7 +423,7 @@ body {
 
 .sensor-trend { font-size: 0.72rem; margin-top: 0.4rem; font-weight: 600; }
 
-/* ALERTS */
+/* ALERTS — crisp white / soft status tints instead of beige */
 .alert-list { display: flex; flex-direction: column; gap: 0.5rem; }
 
 .alert-item {
@@ -414,9 +437,9 @@ body {
   font-weight: 500;
 }
 
-.alert-item.warning { background: #b8832a12; border: 1.5px solid #E2C9A7; color: var(--yellow); }
-.alert-item.critical { background: #c55a3e12; border: 1.5px solid #c55a3e88; color: var(--red); }
-.alert-item.info { background: var(--sage-dim); border: 1.5px solid var(--sage-light); color: var(--sage-dark); }
+.alert-item.warning  { background: #fffbeb; border: 1.5px solid #fde68a; color: #b45309; }
+.alert-item.critical { background: #fef2f2; border: 1.5px solid #fecaca; color: #b91c1c; }
+.alert-item.info     { background: var(--surface); border: 1.5px solid var(--border); color: var(--text-dim); }
 
 .alert-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
 .alert-item.warning .alert-dot { background: var(--yellow); }
@@ -453,7 +476,7 @@ body {
   font-weight: 700;
   cursor: pointer;
   transition: background 0.2s;
-  box-shadow: 0 2px 8px rgba(155,181,163,0.3);
+  box-shadow: 0 2px 8px rgba(13,148,136,0.3);
 }
 
 .sms-btn:hover { background: var(--sage-dark); }
@@ -490,7 +513,7 @@ body {
   font-weight: 700;
   cursor: pointer;
   transition: background 0.2s;
-  box-shadow: 0 2px 12px rgba(155,181,163,0.3);
+  box-shadow: 0 2px 12px rgba(13,148,136,0.3);
 }
 
 .ai-run-btn:hover { background: var(--sage-dark); }

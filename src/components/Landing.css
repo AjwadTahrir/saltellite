@@ -1,0 +1,129 @@
+/* Landing intro — SaltelliteReference style (Outfit font + teal/cyan gradient).
+   Self-contained: does NOT depend on App.css variables. */
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700;800&display=swap');
+
+.landing {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  overflow: hidden;
+  background: #f6fbfa;            /* light base so the fluid reads as teal */
+  font-family: 'Outfit', system-ui, sans-serif;
+  opacity: 1;
+  transition: opacity 0.6s ease;
+}
+
+.landing--leaving { opacity: 0; }
+
+.landing__bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+/* radial cream veil so the centered title stays crisp */
+.landing__veil {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 45%,
+    rgba(246, 251, 250, 0) 0%,
+    rgba(246, 251, 250, 0.45) 68%);
+}
+
+.landing__content {
+  position: relative;
+  z-index: 2;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2rem;
+  pointer-events: none;             /* let the fluid react everywhere... */
+}
+.landing__content > * { pointer-events: auto; }  /* ...but keep the button clickable */
+
+.landing__title {
+  margin: 0;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 800;
+  font-size: clamp(3.4rem, 9vw, 6.5rem);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: #1e293b;          /* solid dark navy — matches the screenshot, always visible */
+}
+
+.landing__tag {
+  max-width: 30rem;
+  margin: 1.25rem auto 0;
+  font-size: 1.125rem;        /* text-lg */
+  font-weight: 500;           /* font-medium */
+  line-height: 1.6;
+  color: #1e293b;             /* text-slate-800 — high contrast */
+}
+
+.landing__cta {
+  position: relative;          /* anchor the spotlight layer */
+  overflow: hidden;            /* clip the glow to the pill */
+  margin-top: 2rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.97rem;
+  font-weight: 700;
+  letter-spacing: 0.025em;    /* tracking-wide */
+  color: #fff;
+  background: linear-gradient(120deg, #0d9488, #0891b2);
+  border: none;
+  border-radius: 999px;
+  padding: 0.75rem 2rem;      /* py-3 px-8 */
+  cursor: pointer;
+  box-shadow: 0 10px 26px rgba(13, 148, 136, 0.32);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  --mouse-x: 50%;
+  --mouse-y: 50%;
+}
+
+/* cursor-following sheen (adapted from React Bits SpotlightCard) */
+.landing__cta::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    140px circle at var(--mouse-x) var(--mouse-y),
+    rgba(255, 255, 255, 0.55),
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
+}
+
+.landing__cta:hover::before { opacity: 1; }
+
+/* keep text + arrow crisp above the glow */
+.landing__cta-label,
+.landing__arrow { position: relative; z-index: 1; }
+
+.landing__cta:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 14px 32px rgba(13, 148, 136, 0.4);
+}
+
+.landing__arrow { transition: transform 0.2s ease; }
+.landing__cta:hover .landing__arrow { transform: translateX(4px); }
+
+.landing__fade {
+  opacity: 0;
+  animation: landingFadeUp 0.6s ease forwards;
+}
+
+@keyframes landingFadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

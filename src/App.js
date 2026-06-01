@@ -4,8 +4,9 @@ import { XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area } from "rec
 import axios from "axios";
 import "leaflet/dist/leaflet.css";
 import "./App.css";
+import Landing from "./components/Landing";
 
-const API = "http://localhost:8000";
+const API = "https://saltellite-api.onrender.com";
 
 const DEFAULT_FIELDS = [
   { id: 1, name: "Sekinchan — Paddy",         lat: 3.535357, lng: 101.120330, area: "5.2 ha", radius: 407,  custom: false },
@@ -120,6 +121,7 @@ function RiskGauge({ score }) {
 }
 
 export default function App() {
+  const [showApp, setShowApp] = useState(false);
   const [time, setTime]                     = useState(new Date());
   const [fields, setFields]                 = useState(DEFAULT_FIELDS);
   const [activeField, setActive]            = useState(DEFAULT_FIELDS[0]);
@@ -298,11 +300,12 @@ export default function App() {
   const criticalFields = Object.values(fieldData).filter(Boolean).filter(d => d.salinity.risk === "Severe" || d.salinity.risk === "Moderate").length;
   const urgencyColor   = analysis?.urgency === "CRITICAL" ? "var(--red)" : analysis?.urgency === "WARNING" ? "var(--yellow)" : "var(--sage-dark)";
 
+  if (!showApp) return <Landing onEnter={() => setShowApp(true)} />;
+
   return (
     <div className="app">
       <header className="header">
         <div className="logo">
-          <div className="logo-icon">🌊</div>
           <div>
             <div className="logo-text">SALTellite</div>
             <div className="logo-sub">Saline Intrusion Detection via Satellite + AI</div>

@@ -1,0 +1,89 @@
+/* SpotlightCard — plain-CSS translation of the requested Tailwind design.
+   Tailwind -> CSS mapping noted inline. */
+
+.spotlight-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;   /* text left, arrow right */
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 22rem;
+  text-align: left;
+  border-radius: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.10);  /* border-white/10 */
+  background-color: #0f172a;                     /* bg-slate-900 */
+  padding: 1.1rem 1.5rem;
+  cursor: pointer;
+  font-family: 'Outfit', system-ui, sans-serif;
+  --mouse-x: 50%;
+  --mouse-y: 50%;
+  --spotlight-color: rgba(20, 184, 166, 0.15);   /* oceanic teal glow */
+  transition: border-color 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* mouse-tracking radial glow (React Bits spotlight mechanic) */
+.spotlight-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at var(--mouse-x) var(--mouse-y),
+    var(--spotlight-color),
+    transparent 80%
+  );
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  pointer-events: none;
+}
+
+.spotlight-card:hover::before { opacity: 1; }
+
+.spotlight-card:hover {
+  border-color: rgba(20, 184, 166, 0.45);
+  transform: translateY(-2px);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.45);
+}
+
+/* text block, stacked vertically on the left */
+.spotlight-card__text {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.spotlight-card__title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.125rem;     /* text-lg */
+  font-weight: 600;        /* font-semibold */
+  color: #ffffff;          /* text-white */
+  line-height: 1.2;
+}
+
+.spotlight-card__title-icon {
+  color: #2dd4bf;          /* teal-400 — satellite accent */
+  flex-shrink: 0;
+}
+
+.spotlight-card__sub {
+  font-size: 0.875rem;     /* text-sm */
+  color: #94a3b8;          /* text-slate-400 */
+}
+
+/* arrow, far right, slides on hover (group-hover:translate-x-1) */
+.spotlight-card__arrow {
+  position: relative;
+  z-index: 1;
+  color: #ffffff;
+  flex-shrink: 0;
+  transition: transform 0.3s ease;
+}
+
+.spotlight-card:hover .spotlight-card__arrow {
+  transform: translateX(4px);
+}

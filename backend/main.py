@@ -146,10 +146,12 @@ def fallback_indices(seed=0):
 
 # ── Main field analysis endpoint ───────────────────────────────────────────
 @app.get("/field")
-def get_field(lat: float, lng: float):
+def get_field(lat: float, lng: float, radius: float = 300):
     try:
         token = get_sentinel_token()
-        delta = 0.003
+        
+        # Scale bounding box to actual field radius
+        delta = max(0.003, radius / 111000)
         bbox  = [lng - delta, lat - delta, lng + delta, lat + delta]
 
         indices = {}
