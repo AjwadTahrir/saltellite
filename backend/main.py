@@ -217,6 +217,120 @@ def get_field(lat: float, lng: float, radius: float = 300):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+def fetch_index_series(token: str, bbox: list, evalscript: str, index_name: str, months: int = 6):
+    """
+    Like fetch_index, but returns ONE value per month for the last `months`
+    months — i.e. the full interval list, not just the latest.
+    Returns: dict { "YYYY-MM": mean_value }  (months with no clear data omitted)
+    """
+    date_to   = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    date_from = (datetime.utcnow() - timedelta(days=30 * months)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    payload = {
+        "input": {
+            "bounds": {
+                "bbox": bbox,
+                "properties": { "crs": "http://www.opengis.net/def/crs/EPSG/0/4326" }
+            },
+            "data": [{
+                "type": "sentinel-2-l2a",
+                "dataFilter": { "mosaickingOrder": "leastCC", "maxCloudCoverage": 80 }
+            }]
+        },
+        "aggregation": {
+            "timeRange": { "from": date_from, "to": date_to },
+            "aggregationInterval": { "of": "P30D" },   # one data point per ~month
+            "evalscript": evalscript,
+            "resx": 20, "resy": 20
+        },
+        "calculations": {
+            index_name: {
+                "histograms": { "default": { "nBins": 20, "lowEdge": -1.0, "highEdge": 1.0 } }
+            }
+        }
+    }
+
+    resp = requests.post(
+        "https://services.sentinel-hub.com/api/v1/statistics",
+        json=payload,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if not resp.ok:
+        return {}
+
+    intervals = resp.json().get("data", [])
+    series = {}
+    for itv in intervals:
+        mean = (
+            itv.get("outputs", {}).get(index_name, {})
+               .get("bands", {}).get("B0", {}).get("stats", {}).get("mean")
+        )
+        if mean is None:
+            continue
+        # interval["interval"]["from"] looks like "2025-01-01T00:00:00Z"
+        frm = itv.get("interval", {}).get("from", "")
+        month_key = frm[:7]  # "YYYY-MM"
+        if month_key:
+            series[month_key] = round(float(mean), 4)
+    return series
+
+
+@app.get("/history")
+def get_history(lat: float, lng: float, radius: float = 300, months: int = 6):
+    """
+    Real monthly trend: for each of the last `months`, returns NDVI and a
+    model-predicted soil EC computed from that month's satellite indices.
+    """
+    try:
+        token = get_sentinel_token()
+        delta = max(0.003, radius / 111000)
+        bbox  = [lng - delta, lat - delta, lng + delta, lat + delta]
+
+        # Pull a monthly series for each index the model needs
+        series_by_index = {}
+        for name, script in EVALSCRIPTS.items():
+            series_by_index[name] = fetch_index_series(token, bbox, script, name, months)
+
+        # Collect the union of all month keys, sorted chronologically
+        all_months = sorted(set().union(*[set(s.keys()) for s in series_by_index.values()]))
+
+        # Keep only the most recent `months`
+        all_months = all_months[-months:]
+
+        if not all_months:
+            # No clear satellite passes at all → signal empty to the frontend
+            return {"source": "none", "points": []}
+
+        fb = fallback_indices(seed=int(lat * 1000))
+        points = []
+        for mkey in all_months:
+            # Build this month's index row; fill gaps with that index's nearest
+            # available value, else the deterministic fallback.
+            row = {}
+            for name in EVALSCRIPTS:
+                s = series_by_index[name]
+                if mkey in s:
+                    row[name] = s[mkey]
+                elif s:
+                    row[name] = list(s.values())[-1]  # last known for that index
+                else:
+                    row[name] = fb[name]
+
+            features = pd.DataFrame([{
+                "ndvi": row["ndvi"], "ndsi": row["ndsi"], "ndwi": row["ndwi"],
+                "bsi":  row["bsi"],  "evi":  row["evi"],  "savi": row["savi"],
+            }])
+            ec = max(0.1, round(float(salinity_model.predict(features)[0]), 2))
+
+            # "YYYY-MM" → "Mon" label
+            month_label = datetime.strptime(mkey, "%Y-%m").strftime("%b")
+            points.append({ "month": month_label, "ndvi": round(row["ndvi"], 3), "ec": ec })
+
+        return {"source": "sentinel-2", "points": points}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 # ── Legacy NDVI endpoint ───────────────────────────────────────────────────
 @app.get("/ndvi")
 def get_ndvi(lat: float, lng: float):

@@ -53,16 +53,16 @@ body {
 
 /* HEADER */
 .header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem 2rem;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  box-shadow: var(--shadow);
   position: sticky;
   top: 0;
   z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;   /* logo left, actions right */
+  padding: 0.85rem 2rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow);
 }
 
 .logo {
@@ -552,3 +552,70 @@ body {
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--sage-light); border-radius: 2px; }
+
+/* ============================================================
+   MULTI-PAGE LAYOUT (Analytics / AI Insights / Fields)
+   Reuses existing tokens so the palette + fonts stay identical.
+   ============================================================ */
+.page-wrap {
+  padding: 1.5rem 2rem;
+  overflow-y: auto;
+  height: calc(100vh - 70px);
+  background: var(--bg);
+}
+
+.page-head { margin-bottom: 1.25rem; }
+
+.page-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.6rem;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.page-sub {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  margin-top: 0.2rem;
+}
+
+.page-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.85rem;
+}
+
+@media (max-width: 900px) {
+  .page-grid { grid-template-columns: 1fr; }
+}
+
+/* FIELDS TABLE */
+.fields-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-body);
+}
+
+.fields-table thead th {
+  text-align: left;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  font-weight: 700;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+
+.fields-table tbody td {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.fields-row { cursor: pointer; transition: background 0.15s; }
+.fields-row:hover { background: var(--sage-dim); }
+.fields-table tbody tr:last-child td { border-bottom: none; }

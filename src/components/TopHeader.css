@@ -1,0 +1,51 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
+
+/* th-nav  ->  centered nav, absolutely positioned in the header center */
+.th-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* th-item  ->  relative px-4 py-2 rounded-full text-sm font-semibold
+                text-slate-600 hover:text-slate-900 */
+.th-item {
+  position: relative;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0.55rem 1.15rem;
+  border-radius: 999px;
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #475569;                 /* text-slate-600 */
+  transition: color 0.25s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.th-item:hover { color: #0f172a; }   /* hover:text-slate-900 */
+
+/* active label sits white, on top of the pill */
+.th-item--active .th-label { color: #ffffff; }   /* text-white */
+
+/* th-pill  ->  absolute inset-0 rounded-full bg-teal-500 z-[-1]
+   the gliding magnetic pill (animated via Framer Motion layoutId) */
+.th-pill {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: #0891b2;            /* cyan-600 */
+  z-index: 0;
+  box-shadow: 0 6px 18px rgba(8, 145, 178, 0.32);
+}
+
+/* th-label  ->  relative z-10  (text strictly above the pill) */
+.th-label {
+  position: relative;
+  z-index: 1;
+  transition: color 0.25s ease;
+}
