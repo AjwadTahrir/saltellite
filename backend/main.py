@@ -149,7 +149,7 @@ def fallback_indices(seed=0):
 def get_field(lat: float, lng: float, radius: float = 300):
     try:
         token = get_sentinel_token()
-        
+
         # Scale bounding box to actual field radius
         delta = max(0.003, radius / 111000)
         bbox  = [lng - delta, lat - delta, lng + delta, lat + delta]
@@ -217,16 +217,46 @@ def get_field(lat: float, lng: float, radius: float = 300):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ══════════════════════════════════════════════════════════════════════════
+#  /history — FAST: one Sentinel call (all indices), real monthly series.
+# ══════════════════════════════════════════════════════════════════════════
+HISTORY_EVALSCRIPT = """
+//VERSION=3
+function setup() {
+  return {
+    input: [{ bands: ["B02","B03","B04","B08","B11","dataMask"] }],
+    output: [
+      { id: "ndvi", bands: 1, sampleType: "FLOAT32" },
+      { id: "ndsi", bands: 1, sampleType: "FLOAT32" },
+      { id: "ndwi", bands: 1, sampleType: "FLOAT32" },
+      { id: "bsi",  bands: 1, sampleType: "FLOAT32" },
+      { id: "evi",  bands: 1, sampleType: "FLOAT32" },
+      { id: "savi", bands: 1, sampleType: "FLOAT32" },
+      { id: "dataMask", bands: 1 }
+    ]
+  };
+}
+function evaluatePixel(s) {
+  let L = 0.5;
+  return {
+    ndvi: [(s.B08 - s.B04) / (s.B08 + s.B04 + 0.0001)],
+    ndsi: [(s.B04 - s.B08) / (s.B04 + s.B08 + 0.0001)],
+    ndwi: [(s.B03 - s.B08) / (s.B03 + s.B08 + 0.0001)],
+    bsi:  [((s.B11 + s.B04) - (s.B08 + s.B02)) / ((s.B11 + s.B04) + (s.B08 + s.B02) + 0.0001)],
+    evi:  [2.5 * (s.B08 - s.B04) / (s.B08 + 6 * s.B04 - 7.5 * s.B02 + 1 + 0.0001)],
+    savi: [(s.B08 - s.B04) / (s.B08 + s.B04 + L) * (1 + L)],
+    dataMask: [s.dataMask]
+  };
+}
+"""
 
-def fetch_index_series(token: str, bbox: list, evalscript: str, index_name: str, months: int = 6):
-    """
-    Like fetch_index, but returns ONE value per month for the last `months`
-    months — i.e. the full interval list, not just the latest.
-    Returns: dict { "YYYY-MM": mean_value }  (months with no clear data omitted)
-    """
+
+def fetch_all_indices_series(token: str, bbox: list, months: int = 6):
+    """ONE Statistical API call returning every index, one value per month."""
     date_to   = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     date_from = (datetime.utcnow() - timedelta(days=30 * months)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    index_names = ["ndvi", "ndsi", "ndwi", "bsi", "evi", "savi"]
     payload = {
         "input": {
             "bounds": {
@@ -240,15 +270,11 @@ def fetch_index_series(token: str, bbox: list, evalscript: str, index_name: str,
         },
         "aggregation": {
             "timeRange": { "from": date_from, "to": date_to },
-            "aggregationInterval": { "of": "P30D" },   # one data point per ~month
-            "evalscript": evalscript,
+            "aggregationInterval": { "of": "P30D" },
+            "evalscript": HISTORY_EVALSCRIPT,
             "resx": 20, "resy": 20
         },
-        "calculations": {
-            index_name: {
-                "histograms": { "default": { "nBins": 20, "lowEdge": -1.0, "highEdge": 1.0 } }
-            }
-        }
+        "calculations": { n: {} for n in index_names }
     }
 
     resp = requests.post(
@@ -259,78 +285,53 @@ def fetch_index_series(token: str, bbox: list, evalscript: str, index_name: str,
     if not resp.ok:
         return {}
 
-    intervals = resp.json().get("data", [])
-    series = {}
-    for itv in intervals:
-        mean = (
-            itv.get("outputs", {}).get(index_name, {})
-               .get("bands", {}).get("B0", {}).get("stats", {}).get("mean")
-        )
-        if mean is None:
-            continue
-        # interval["interval"]["from"] looks like "2025-01-01T00:00:00Z"
+    out = {}
+    for itv in resp.json().get("data", []):
         frm = itv.get("interval", {}).get("from", "")
-        month_key = frm[:7]  # "YYYY-MM"
-        if month_key:
-            series[month_key] = round(float(mean), 4)
-    return series
+        mkey = frm[:7]
+        if not mkey:
+            continue
+        outputs = itv.get("outputs", {})
+        row = {}
+        for n in index_names:
+            mean = outputs.get(n, {}).get("bands", {}).get("B0", {}).get("stats", {}).get("mean")
+            if mean is not None:
+                row[n] = round(float(mean), 4)
+        if len(row) >= 4:
+            out[mkey] = row
+    return out
 
 
 @app.get("/history")
 def get_history(lat: float, lng: float, radius: float = 300, months: int = 6):
-    """
-    Real monthly trend: for each of the last `months`, returns NDVI and a
-    model-predicted soil EC computed from that month's satellite indices.
-    """
+    """Real monthly NDVI + model-predicted EC trend. One Sentinel call."""
     try:
         token = get_sentinel_token()
         delta = max(0.003, radius / 111000)
         bbox  = [lng - delta, lat - delta, lng + delta, lat + delta]
 
-        # Pull a monthly series for each index the model needs
-        series_by_index = {}
-        for name, script in EVALSCRIPTS.items():
-            series_by_index[name] = fetch_index_series(token, bbox, script, name, months)
+        series = fetch_all_indices_series(token, bbox, months)
+        months_sorted = sorted(series.keys())[-months:]
 
-        # Collect the union of all month keys, sorted chronologically
-        all_months = sorted(set().union(*[set(s.keys()) for s in series_by_index.values()]))
-
-        # Keep only the most recent `months`
-        all_months = all_months[-months:]
-
-        if not all_months:
-            # No clear satellite passes at all → signal empty to the frontend
+        if not months_sorted:
             return {"source": "none", "points": []}
 
         fb = fallback_indices(seed=int(lat * 1000))
         points = []
-        for mkey in all_months:
-            # Build this month's index row; fill gaps with that index's nearest
-            # available value, else the deterministic fallback.
-            row = {}
-            for name in EVALSCRIPTS:
-                s = series_by_index[name]
-                if mkey in s:
-                    row[name] = s[mkey]
-                elif s:
-                    row[name] = list(s.values())[-1]  # last known for that index
-                else:
-                    row[name] = fb[name]
-
-            features = pd.DataFrame([{
-                "ndvi": row["ndvi"], "ndsi": row["ndsi"], "ndwi": row["ndwi"],
-                "bsi":  row["bsi"],  "evi":  row["evi"],  "savi": row["savi"],
-            }])
+        for mkey in months_sorted:
+            row = series[mkey]
+            feat = {n: row.get(n, fb[n]) for n in ["ndvi", "ndsi", "ndwi", "bsi", "evi", "savi"]}
+            features = pd.DataFrame([feat])
             ec = max(0.1, round(float(salinity_model.predict(features)[0]), 2))
-
-            # "YYYY-MM" → "Mon" label
             month_label = datetime.strptime(mkey, "%Y-%m").strftime("%b")
-            points.append({ "month": month_label, "ndvi": round(row["ndvi"], 3), "ec": ec })
+            points.append({ "month": month_label, "ndvi": round(feat["ndvi"], 3), "ec": ec })
 
         return {"source": "sentinel-2", "points": points}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── Legacy NDVI endpoint ───────────────────────────────────────────────────
 @app.get("/ndvi")
 def get_ndvi(lat: float, lng: float):
@@ -515,10 +516,8 @@ async def sms_webhook(request: Request):
         body   = form.get("Body", "").strip().upper()
         sender = form.get("From", "")
 
-        # Merge default + custom fields
         all_fields = {**FIELD_MAP, **custom_fields}
 
-        # Parse field key
         field_key = None
         for key in all_fields:
             if key.upper() in body or all_fields[key]["name"].upper().split("—")[0].strip() in body:
@@ -570,4 +569,4 @@ async def sms_webhook(request: Request):
 # ── Health check ───────────────────────────────────────────────────────────
 @app.get("/")
 def root():
-    return {"status": "SALTellite API running", "version": "3.0"}
+    return {"status": "SALTellite API running", "version": "3.1"}

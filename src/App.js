@@ -176,16 +176,17 @@ export default function App() {
     const f = activeField;
     if (!f) return;
 
-    // serve from cache if we already fetched this field
-    if (historyCache[f.id]) {
-      const pts = historyCache[f.id].points;
-      setSalinityHistory(pts.map(p => ({ month: p.month, ec: p.ec })));
-      setNdviHistory(pts.map(p => ({ month: p.month, ndvi: p.ndvi })));
-      return;
-    }
-
     let cancelled = false;
     (async () => {
+      // serve from cache if present (read via functional setState to avoid stale closure)
+      let cached;
+      setHistoryCache(prev => { cached = prev[f.id]; return prev; });
+      if (cached) {
+        setSalinityHistory(cached.points.map(p => ({ month: p.month, ec: p.ec })));
+        setNdviHistory(cached.points.map(p => ({ month: p.month, ndvi: p.ndvi })));
+        return;
+      }
+
       setHistoryLoading(true);
       try {
         const res = await axios.get(`${API}/history`, {
@@ -203,7 +204,7 @@ export default function App() {
     })();
 
     return () => { cancelled = true; };
-  }, [activeField, historyCache]);
+  }, [activeField]);
 
   const handleFieldAdd = useCallback(async (lat, lng, radius) => {
     const newId  = Date.now();
@@ -695,8 +696,6 @@ export default function App() {
           fields={fields}
           fieldData={fieldData}
           activeField={activeField}
-          salinityHistory={salinityHistory}
-          ndviHistory={ndviHistory}
         />
       )}
 
